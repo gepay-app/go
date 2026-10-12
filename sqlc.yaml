@@ -1,3 +1,43 @@
 version: "2"
-
-sql: []
+# =============================================================================
+# sqlc — generate kode Go dari query SQL (bukan ORM).
+#
+# Pola: SATU entry per module. Query ditulis di db/postgres/queries/<module>/*.sql,
+# hasil generate masuk ke internal/modules/<module>/repository (bukan satu
+# package sqlc besar untuk semua tabel). Ini menjaga boundary modular monolith:
+# repository module X hanya punya kode untuk tabel milik X sendiri.
+#
+# Saat project masih starter (belum ada module), section `sql` sengaja KOSONG.
+# Setiap kali membuat module baru, salin template di bawah ke dalam section
+# `sql:` lalu ganti <module>. Lihat readme/module-development.md.
+#
+# Template per module (perhatikan indentasi 2 spasi, sejajar dengan `sql:`):
+#
+#   - engine: "postgresql"
+#     schema: "db/postgres/migrations"
+#     queries: "db/postgres/queries/<module>"
+#     gen:
+#       go:
+#         package: "repository"
+#         out: "internal/modules/<module>/repository"
+#         sql_package: "pgx/v5"
+#         emit_json_tags: false
+#         emit_prepared_queries: false
+#         overrides:
+#           - db_type: "uuid"
+#             go_type: "github.com/google/uuid.UUID"
+# =============================================================================
+sql:
+   - engine: "postgresql"
+     schema: "db/postgres/migrations"
+     queries: "db/postgres/queries/identity"
+     gen:
+       go:
+         package: "repository"
+         out: "internal/modules/identity/internal/repository"
+         sql_package: "pgx/v5"
+         emit_json_tags: false
+         emit_prepared_queries: false
+         overrides:
+           - db_type: "uuid"
+             go_type: "uuid.UUID"

@@ -11,23 +11,23 @@
 package identity
 
 import (
+	"app/internal/platform/firebase"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/redis/go-redis/v9"
 
-	"app/internal/modules/identity/api"
 	httpdelivery "app/internal/modules/identity/internal/delivery/http"
 	"app/internal/modules/identity/internal/service"
 )
 
 // Dependencies adalah apa yang modul ini butuhkan dari luar. bootstrap yang mengisi.
 type Dependencies struct {
-	Logger *slog.Logger
-	DB     *pgxpool.Pool
-	Redis  *redis.Client
-	// Modul lain lewat kontraknya, contoh: Users someOtherModuleapi.UserReader
+	Logger   *slog.Logger
+	DB       *pgxpool.Pool
+	Redis    *redis.Client
+	Verifier firebase.Verifier
 }
 
 // Module memegang dependensi dan service modul.
@@ -45,11 +45,7 @@ func New(deps Dependencies) *Module {
 
 // RegisterRoutes mendelegasikan pemasangan endpoint ke delivery layer.
 func (m *Module) RegisterRoutes(e *echo.Echo) {
-	httpdelivery.RegisterRoutes(e, m.svc)
+	httpdelivery.RegisterRoutes(e, m.deps.Verifier, m.svc)
 
 	m.deps.Logger.Info("identity routes registered")
 }
-
-// Greeter mengembalikan kontrak modul ini untuk dipakai modul lain (disuntikkan
-// lewat bootstrap). Modul lain tidak pernah melihat ./internal.
-func (m *Module) Greeter() api.Greeter { return m.svc }

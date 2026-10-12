@@ -1,5 +1,6 @@
 # Binaries and build output
 /bin/
+/tmp/
 *.exe
 *.exe~
 *.dll
@@ -13,6 +14,7 @@
 .env
 .env.*
 !.env.example
+/secrets
 
 # Go workspace files
 go.work

@@ -4,6 +4,7 @@
 package bootstrap
 
 import (
+	"app/internal/platform/firebase"
 	"context"
 	"errors"
 	"fmt"
@@ -63,11 +64,19 @@ func serve(cfg *config.App, logger *slog.Logger) error {
 		},
 	})
 
+	// inject verifier di setiap module yang butuh
+	verifier, err := firebase.New(ctx, &cfg.Firebase)
+	if err != nil {
+		return fmt.Errorf("firebase: %w", err)
+	}
+	logger.Info("firebase auth ready")
+
 	// Wiring modul. Tambah/ganti di sini saat kamu membangun modul asli.
 	identityModule := identity.New(identity.Dependencies{
-		Logger: logger,
-		DB:     pool,
-		Redis:  rdb,
+		Logger:   logger,
+		DB:       pool,
+		Redis:    rdb,
+		Verifier: verifier,
 	})
 	identityModule.RegisterRoutes(srv)
 

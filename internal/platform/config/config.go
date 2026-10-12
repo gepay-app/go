@@ -29,6 +29,7 @@ type App struct {
 
 	Database Database `envPrefix:"DB_"`
 	Redis    Redis    `envPrefix:"REDIS_"`
+	Firebase Firebase `envPrefix:"FIREBASE_"`
 }
 type Database struct {
 	URL             string        `env:"URL"` // wajib
@@ -43,6 +44,11 @@ type Redis struct {
 	Username string `env:"USERNAME"`
 	Password string `env:"PASSWORD"`
 	DB       int    `env:"DB"   envDefault:"0"`
+}
+
+type Firebase struct {
+	CredentialsFile string `env:"CREDENTIALS_FILE"` // wajib, mis. secrets/service-account.json
+	ProjectID       string `env:"PROJECT_ID"`       // opsional; kosong = dari file
 }
 
 func (app *App) validate() error {
@@ -61,6 +67,9 @@ func (app *App) validate() error {
 	case "", "json", "text":
 	default:
 		return fmt.Errorf("APP_LOG_FORMAT must be one of json|text (or empty for auto), got %q", app.LogFormat)
+	}
+	if strings.TrimSpace(app.Firebase.CredentialsFile) == "" {
+		return fmt.Errorf("FIREBASE_CREDENTIALS_FILE is required")
 	}
 	return nil
 }

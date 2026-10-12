@@ -29,9 +29,11 @@ Server **fail-fast**: kalau Postgres atau Redis tidak bisa di-`Ping` saat startu
 | Target | Fungsi |
 |---|---|
 | `make run` | Jalankan server (`go run ./cmd/app`) |
+| `make dev` | Jalankan dengan live reload ([air](https://github.com/air-verse/air)) |
 | `make build` | Build binary ke `bin/app` |
 | `make test` | Jalankan semua test |
 | `make vet` / `make fmt` / `make tidy` | `go vet` / `gofmt` / `go mod tidy` |
+| `make sqlc` | Generate kode repository dari query SQL (`sqlc generate`) |
 | `make migrate-up` / `migrate-down` / `migrate-status` | Migrasi goose |
 | `make migrate-create name=create_users` | Buat file migrasi baru |
 
@@ -133,14 +135,14 @@ CREATE TABLE users (
 DROP TABLE users;
 ```
 
-Modul `identity` di repo ini adalah **skeleton contoh** (hello world, tanpa query) — ganti dengan modul aslimu. `internal/repository/` masih kosong, siap diisi hasil `sqlc generate` (`sqlc.yaml` belum dikonfigurasi).
+Modul `identity` di repo ini adalah **skeleton contoh**. Query ada di `db/postgres/queries/identity/` dan di-generate `sqlc` ke `internal/modules/<module>/internal/repository/` (satu entry `sqlc.yaml` per modul, supaya repository tetap privat ke modulnya).
 
 ## Catatan
 
 - **Config** divalidasi saat startup (`internal/platform/config`). Level/format log otomatis: production → info/json, lainnya → debug/text.
 - **CORS nonaktif** secara default; isi `APP_CORS_ORIGINS` untuk mengaktifkan.
 - **Body request hanya JSON** — media type lain ditolak `415` (`unsupported_media_type`).
-- Batas bawaan: body 1 MiB, timeout request 15s, graceful shutdown 10s.
+- Batas bawaan: body 1 MiB, timeout request 15s, graceful shutdown 20s (selalu > timeout request).
 
 ## Go module
 

@@ -20,7 +20,9 @@ const (
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 30 * time.Second
 	idleTimeout       = 60 * time.Second
-	gracefulTimeout   = 10 * time.Second
+	// Harus > requestTimeout: setiap handler (ctx-nya dibatalkan ContextTimeout)
+	// selesai lebih dulu sebelum dependency ditutup di shutdown.
+	gracefulTimeout = requestTimeout + 5*time.Second
 
 	requestTimeout = 15 * time.Second
 	bodyLimitBytes = 1 << 20 // 1 MiB
