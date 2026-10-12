@@ -2,17 +2,34 @@
 package service
 
 import (
+	"app/internal/modules/identity/api"
+	"app/internal/modules/identity/internal/cache"
+	"app/internal/modules/identity/internal/repository"
+	"app/internal/platform/apperr"
+	"app/internal/platform/firebase"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
-// Service mengimplementasi api.Greeter. db dan rdb disimpan untuk dipakai nanti;
-// skeleton ini belum menjalankan query apa pun.
+// Service adalah use case modul identity. Satu struct; method dipecah per file:
+//
+//	session.go -> Ensure, Resolve
+//	user.go    -> UpdateStatus, DeleteUser, CreateUser
+//	role.go    -> GrantRole, RevokeRole
+//	authz.go   -> otorisasi admin
 type Service struct {
-	db  *pgxpool.Pool
-	rdb *redis.Client
+	db        *pgxpool.Pool
+	repo      *repository.Queries
+	userCache *cache.UserCache
+	admin     firebase.UserAdmin
 }
 
-func New(db *pgxpool.Pool, rdb *redis.Client) *Service {
-	return &Service{db: db, rdb: rdb}
+func New(db *pgxpool.Pool, userCache *cache.UserCache, admin firebase.UserAdmin) *Service {
+	return &Service{db: db, repo: repository.New(db), userCache: userCache, admin: admin}
+}
+
+func (s *Service) checkStatus(u api.User) (api.User, error) {
+	if u.Status != api.StatusActive {
+		return api.User{}, apperr.Forbidden("account_disabled", "account is disabled")
+	}
+	return u, nil
 }

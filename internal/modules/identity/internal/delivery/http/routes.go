@@ -19,5 +19,15 @@ func RegisterRoutes(e *echo.Echo, verifier firebase.Verifier, svc *service.Servi
 	h := newHandler(svc)
 	requireAuth := middleware.RequireAuth(verifier)
 	g := e.Group("/identities", requireAuth)
+	g.POST("/session", h.session)
 	g.GET("/me", h.me)
+
+	// Endpoint admin. Otorisasi (role) dicek di service.
+	admin := g.Group("/admin")
+	admin.GET("/users", h.listUsers)
+	admin.POST("/users", h.createUser)
+	admin.DELETE("/users/:id", h.deleteUser)
+	admin.PATCH("/users/:id/status", h.updateStatus)
+	admin.POST("/users/:id/roles", h.grantRole)
+	admin.DELETE("/users/:id/roles/:role", h.revokeRole)
 }

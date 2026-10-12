@@ -64,8 +64,8 @@ func serve(cfg *config.App, logger *slog.Logger) error {
 		},
 	})
 
-	// inject verifier di setiap module yang butuh
-	verifier, err := firebase.New(ctx, &cfg.Firebase)
+	// inject firebase client (verifier + admin) ke module yang butuh
+	fb, err := firebase.New(ctx, &cfg.Firebase)
 	if err != nil {
 		return fmt.Errorf("firebase: %w", err)
 	}
@@ -76,7 +76,8 @@ func serve(cfg *config.App, logger *slog.Logger) error {
 		Logger:   logger,
 		DB:       pool,
 		Redis:    rdb,
-		Verifier: verifier,
+		Verifier: fb,
+		Admin:    fb,
 	})
 	identityModule.RegisterRoutes(srv)
 

@@ -21,9 +21,9 @@ CREATE INDEX ix_identity_users_created_at
 
 CREATE TABLE identity.user_roles
 (
-    id         UUID        PRIMARY KEY,
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id    UUID        NOT NULL REFERENCES identity.users (id) ON DELETE CASCADE,
-    role       VARCHAR(30) NOT NULL, -- SUPER_ADMIN / ADMIN / CREATOR / USER
+    role       VARCHAR(30) NOT NULL, -- SUPER_ADMIN / ADMIN / USER
     granted_by UUID,                 -- null = self (auto-provision) / system
     granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ux_identity_user_role UNIQUE (user_id, role)
@@ -38,7 +38,12 @@ CREATE INDEX ix_identity_user_roles_role
 INSERT INTO identity.users (id, auth_id, email, name, status)
 VALUES ('01a0be15-3032-76b1-9b6b-57a3ab92b0d8', NULL, 'gepeunsafe@gmail.com', 'Super Admin', 'ACTIVE');
 
-INSERT INTO identity.user_roles (id, user_id, role, granted_by, granted_at)
-VALUES ('01a0be15-3032-7b9f-b5d4-6e4cafda5eaa', '01a0be15-3032-76b1-9b6b-57a3ab92b0d8', 'SUPER_ADMIN', NULL, now());
+INSERT INTO identity.user_roles (user_id, role, granted_by, granted_at)
+VALUES ('01a0be15-3032-76b1-9b6b-57a3ab92b0d8', 'SUPER_ADMIN', NULL, now());
 
 -- +goose Down
+-- Semua objek migration ini hidup di schema identity, jadi cukup drop schema-nya
+-- (CASCADE menghapus tabel, index, dan identity sequence sekaligus).
+DROP SCHEMA IF EXISTS identity CASCADE;
+-- citext sengaja TIDAK di-drop: extension level-database, Up memakai
+-- IF NOT EXISTS (aman diulang), dan drop bisa mengganggu objek lain yang memakainya.

@@ -2,7 +2,9 @@
 
 Starter **modular monolith** di Go: satu binary, modul-modul dengan batas yang ditegakkan compiler, logging terstruktur ber-`request_id`, error response seragam, dan persistensi Postgres/Redis siap pakai.
 
-Stack: [Echo v5](https://echo.labstack.com) · `log/slog` · [pgx/v5](https://github.com/jackc/pgx) · [go-redis/v9](https://github.com/redis/go-redis) · [goose](https://github.com/pressly/goose) (migrasi) · `caarlos0/env` (config).
+Stack: [Echo v5](https://echo.labstack.com) · `log/slog` · [pgx/v5](https://github.com/jackc/pgx) · [go-redis/v9](https://github.com/redis/go-redis) · [sqlc](https://sqlc.dev) (repository) · [goose](https://github.com/pressly/goose) (migrasi) · `caarlos0/env` (config).
+
+Go 1.27: pakai stdlib dulu — `uuid` (`import "uuid"`) dan `encoding/json/v2` (`import "encoding/json/v2"`), bukan `github.com/google/uuid` atau `encoding/json`.
 
 ## Prasyarat
 
@@ -35,6 +37,7 @@ Server **fail-fast**: kalau Postgres atau Redis tidak bisa di-`Ping` saat startu
 | `make vet` / `make fmt` / `make tidy` | `go vet` / `gofmt` / `go mod tidy` |
 | `make sqlc` | Generate kode repository dari query SQL (`sqlc generate`) |
 | `make migrate-up` / `migrate-down` / `migrate-status` | Migrasi goose |
+| `make migrate-reset` | Rollback semua migrasi lalu apply ulang (`goose reset && goose up`) |
 | `make migrate-create name=create_users` | Buat file migrasi baru |
 
 `make` membaca `.env` otomatis, jadi app dan goose memakai config yang sama.
@@ -75,10 +78,12 @@ internal/platform/       infrastruktur bersama (bukan domain)
   logging/               logger slog + request_id di context
   apperr/                tipe error aplikasi (kind, code, message, details)
   postgres/ redis/       koneksi
+  firebase/              Firebase Admin: verify ID token + create/delete user
   server/                server Echo + middleware (request id, access log, recover,
                          body limit, CORS, timeout, error handler, binder JSON-only)
 internal/modules/        fitur bisnis (lihat di bawah)
 db/postgres/migrations/  migrasi goose
+db/postgres/queries/     query sqlc, satu file per tabel
 ```
 
 Aplikasi memakai satu logger yang di-`SetDefault`, dan middleware `ContextLogger` menaruh logger ber-`request_id` ke context tiap request.
@@ -90,11 +95,12 @@ Salin pola `internal/modules/identity`:
 ```
 internal/modules/<nama>/
 ├── module.go                     wiring: Dependencies + New + RegisterRoutes
-├── api/                          KONTRAK: DTO + interface untuk modul lain
+├── api/                          KONTRAK: DTO + enum + interface untuk modul lain
 └── internal/                     IMPLEMENTASI
-    ├── service/                  business logic
+    ├── service/                  business logic (satu struct, file per concern)
     ├── repository/               akses data (sqlc)
-    └── delivery/http/            handler + RegisterRoutes
+    ├── cache/                    cache per agregat (opsional)
+    └── delivery/http/            handler + RegisterRoutes + request DTO (validate())
 ```
 
 Lalu daftarkan di `internal/bootstrap/app.go`:
@@ -105,7 +111,8 @@ mod.RegisterRoutes(srv)
 
 Modul lain yang butuh modul ini **hanya** menerima kontraknya (`api`), disuntikkan lewat bootstrap:
 ```go
-order.New(order.Dependencies{Users: identityModule.Greeter()})
+// users: implementasi identityapi.UserApi
+order.New(order.Dependencies{Users: users})
 ```
 
 ### Aturan arah dependensi
@@ -119,6 +126,26 @@ order.New(order.Dependencies{Users: identityModule.Greeter()})
 | `bootstrap` | semuanya |
 
 Direktori bernama `internal/` **ditegakkan compiler**: `.../identity/internal/...` hanya bisa diimport oleh package di bawah `.../identity/`. Jadi modul lain tidak bisa menyentuh implementasimu — gagal compile, bukan sekadar konvensi.
+
+## Modul identity
+
+Auth lewat Firebase: register/login dilakukan di frontend; backend hanya memverifikasi ID token (`Authorization: Bearer <firebase-id-token>`).
+
+- `POST /identities/session` — provisioning idempoten setelah login Firebase (panggil sekali per app boot).
+- `GET /identities/me` — profil user saat ini.
+
+Endpoint admin (butuh role `ADMIN` atau `SUPER_ADMIN`):
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/identities/admin/users?limit=&cursor=` | — (list user, keyset cursor) |
+| POST | `/identities/admin/users` | `{email, name?}` — daftar ke Firebase + DB (role `USER`) |
+| DELETE | `/identities/admin/users/:id` | — |
+| PATCH | `/identities/admin/users/:id/status` | `{status: ACTIVE\|DISABLED}` |
+| POST | `/identities/admin/users/:id/roles` | `{role: USER\|ADMIN\|SUPER_ADMIN}` |
+| DELETE | `/identities/admin/users/:id/roles/:role` | — |
+
+Admin tidak bisa memberi/mencabut role `SUPER_ADMIN`, mengubah/menghapus user `SUPER_ADMIN`, atau mengubah status/menghapus akunnya sendiri — semua itu hanya bisa oleh/di atas `SUPER_ADMIN`.
 
 ## Migrasi
 
@@ -135,7 +162,7 @@ CREATE TABLE users (
 DROP TABLE users;
 ```
 
-Modul `identity` di repo ini adalah **skeleton contoh**. Query ada di `db/postgres/queries/identity/` dan di-generate `sqlc` ke `internal/modules/<module>/internal/repository/` (satu entry `sqlc.yaml` per modul, supaya repository tetap privat ke modulnya).
+Query ditulis di `db/postgres/queries/<module>/<table>.sql`, lalu `make sqlc` meng-generate-nya ke `internal/modules/<module>/internal/repository/` (satu entry `sqlc.yaml` per modul, supaya repository tetap privat ke modulnya). File generated (`db.go`, `models.go`, `*.sql.go`) jangan diedit; setelah mengubah file query jalankan `make sqlc` — file generated yang usang tidak dihapus otomatis, jadi hapus manual kalau ada.
 
 ## Catatan
 
@@ -143,6 +170,11 @@ Modul `identity` di repo ini adalah **skeleton contoh**. Query ada di `db/postgr
 - **CORS nonaktif** secara default; isi `APP_CORS_ORIGINS` untuk mengaktifkan.
 - **Body request hanya JSON** — media type lain ditolak `415` (`unsupported_media_type`).
 - Batas bawaan: body 1 MiB, timeout request 15s, graceful shutdown 20s (selalu > timeout request).
+- **Signup Firebase terbuka:** siapa pun yang bisa sign-up di project Firebase bisa `POST /identities/session` dan otomatis dapat akun `USER`. Kalau registrasi harus admin-only, matikan signup publik di Firebase atau tambahkan gerbang di `/session`.
+
+## Dokumentasi lanjutan
+
+Konvensi lengkap (aturan wajib, arah dependensi, sqlc, cache, migrasi, dll) ada di [`AGENTS.md`](./AGENTS.md).
 
 ## Go module
 

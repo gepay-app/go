@@ -20,7 +20,7 @@ type IdentityUser struct {
 }
 
 type IdentityUserRole struct {
-	ID        uuid.UUID
+	ID        int64
 	UserID    uuid.UUID
 	Role      string
 	GrantedBy pgtype.UUID

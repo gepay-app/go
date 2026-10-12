@@ -12,13 +12,14 @@ import (
 	"uuid"
 )
 
-const createUser = `-- name: CreateUser :one
+const createUserIfAbsent = `-- name: CreateUserIfAbsent :one
 INSERT INTO identity.users (id, auth_id, email, name, status)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT DO NOTHING
 RETURNING id, auth_id, email, name, status, created_at, updated_at
 `
 
-type CreateUserParams struct {
+type CreateUserIfAbsentParams struct {
 	ID     uuid.UUID
 	AuthID pgtype.Text
 	Email  string
@@ -26,8 +27,10 @@ type CreateUserParams struct {
 	Status string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, createUser,
+// Idempoten: ON CONFLICT DO NOTHING -> kalau bentrok, RETURNING kosong
+// (pgx.ErrNoRows) dan pemanggil re-select.
+func (q *Queries) CreateUserIfAbsent(ctx context.Context, arg CreateUserIfAbsentParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, createUserIfAbsent,
 		arg.ID,
 		arg.AuthID,
 		arg.Email,
@@ -45,6 +48,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (Identit
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM identity.users
+WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
 }
 
 const getUserByAuthID = `-- name: GetUserByAuthID :one
@@ -91,20 +104,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (IdentityUse
 	return i, err
 }
 
-const linkAuthID = `-- name: LinkAuthID :one
-UPDATE identity.users
-SET auth_id = $2, updated_at = now()
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, auth_id, email, name, status, created_at, updated_at
+FROM identity.users
 WHERE id = $1
-RETURNING id, auth_id, email, name, status, created_at, updated_at
 `
 
-type LinkAuthIDParams struct {
-	ID     uuid.UUID
-	AuthID pgtype.Text
-}
-
-func (q *Queries) LinkAuthID(ctx context.Context, arg LinkAuthIDParams) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, linkAuthID, arg.ID, arg.AuthID)
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i IdentityUser
 	err := row.Scan(
 		&i.ID,
@@ -116,6 +123,77 @@ func (q *Queries) LinkAuthID(ctx context.Context, arg LinkAuthIDParams) (Identit
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const linkAuthIDIfNull = `-- name: LinkAuthIDIfNull :one
+UPDATE identity.users
+SET auth_id = $2, updated_at = now()
+WHERE id = $1 AND auth_id IS NULL
+RETURNING id, auth_id, email, name, status, created_at, updated_at
+`
+
+type LinkAuthIDIfNullParams struct {
+	ID     uuid.UUID
+	AuthID pgtype.Text
+}
+
+// Hanya menautkan kalau masih NULL, supaya tidak menimpa link yang sudah jadi.
+func (q *Queries) LinkAuthIDIfNull(ctx context.Context, arg LinkAuthIDIfNullParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, linkAuthIDIfNull, arg.ID, arg.AuthID)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.AuthID,
+		&i.Email,
+		&i.Name,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, auth_id, email, name, status, created_at, updated_at
+FROM identity.users
+WHERE id < $1
+ORDER BY id DESC
+LIMIT $2
+`
+
+type ListUsersParams struct {
+	ID    uuid.UUID
+	Limit int32
+}
+
+// Keyset pagination by id (UUIDv7 = urut waktu). Kirim uuid.Max() untuk halaman
+// pertama; ambil limit+1 supaya pemanggil tahu masih ada berikutnya.
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]IdentityUser, error) {
+	rows, err := q.db.Query(ctx, listUsers, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentityUser
+	for rows.Next() {
+		var i IdentityUser
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthID,
+			&i.Email,
+			&i.Name,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateUserStatus = `-- name: UpdateUserStatus :one

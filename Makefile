@@ -9,7 +9,7 @@ GOOSE := go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 SQLC_VERSION ?= v1.31.1
 SQLC := go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 
-.PHONY: run dev build test vet fmt tidy sqlc migrate-up migrate-down migrate-status migrate-create
+.PHONY: run dev build test vet fmt tidy sqlc migrate-up migrate-down migrate-status migrate-reset migrate-create
 
 run: ## Run the HTTP server
 	go run ./cmd/app
@@ -43,6 +43,10 @@ migrate-down: ## Roll back the most recent migration
 
 migrate-status: ## Show migration status
 	$(GOOSE) status
+
+migrate-reset: ## Roll back all migrations then apply again (drop all + migrate up)
+	$(GOOSE) reset
+	$(GOOSE) up
 
 migrate-create: ## Create a migration: make migrate-create name=create_users
 	@test -n "$(name)" || (echo "usage: make migrate-create name=<name>"; exit 1)

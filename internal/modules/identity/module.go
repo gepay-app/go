@@ -4,13 +4,16 @@
 //
 //	./api                                -> kontrak yang boleh dipakai modul lain
 //	./internal/service                   -> business logic
-//	./internal/repository                -> akses data (belum diisi)
+//	./internal/repository                -> akses data (sqlc, generated)
+//	./internal/cache                     -> cache per agregat
 //	./internal/delivery/http             -> handler + route (transport)
 //
 // Seluruh ./internal terkunci oleh aturan "internal" di Go.
 package identity
 
 import (
+	"app/internal/modules/identity/api"
+	"app/internal/modules/identity/internal/cache"
 	"app/internal/platform/firebase"
 	"log/slog"
 
@@ -28,6 +31,7 @@ type Dependencies struct {
 	DB       *pgxpool.Pool
 	Redis    *redis.Client
 	Verifier firebase.Verifier
+	Admin    firebase.UserAdmin
 }
 
 // Module memegang dependensi dan service modul.
@@ -37,9 +41,10 @@ type Module struct {
 }
 
 func New(deps Dependencies) *Module {
+	userCache := cache.NewUserCache(deps.Redis)
 	return &Module{
 		deps: deps,
-		svc:  service.New(deps.DB, deps.Redis),
+		svc:  service.New(deps.DB, userCache, deps.Admin),
 	}
 }
 
@@ -49,3 +54,7 @@ func (m *Module) RegisterRoutes(e *echo.Echo) {
 
 	m.deps.Logger.Info("identity routes registered")
 }
+
+// Users mengekspos kontrak api.UserApi untuk modul lain. Bootstrap yang
+// menyuntikkannya, mis. otherModule.New(otherModule.Dependencies{Users: identityModule.Users()}).
+func (m *Module) Users() api.UserApi { return m.svc }
